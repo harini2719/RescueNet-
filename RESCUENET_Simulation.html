@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RESCUENET - Simple Rescue Simulation</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #eef3f7;
+    color: #17212b;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 18px;
+  }
+  h1 { margin: 0 0 4px; font-size: 30px; }
+  .subtitle { margin: 0 0 16px; color: #5d6873; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1.55fr 1fr;
+    gap: 16px;
+  }
+  .card {
+    background: white;
+    border: 1px solid #d5dde5;
+    border-radius: 14px;
+    box-shadow: 0 5px 18px rgba(0,0,0,.06);
+    overflow: hidden;
+  }
+  .scene { padding: 12px; }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #f7fafc;
+    border-radius: 10px;
+    border: 1px solid #dce4eb;
+  }
+  .panel { padding: 18px; }
+  .status {
+    padding: 12px;
+    border-radius: 10px;
+    background: #f1f5f8;
+    margin-bottom: 14px;
+    font-weight: 700;
+  }
+  .status .small {
+    display: block;
+    font-weight: 400;
+    margin-top: 4px;
+    color: #62707d;
+  }
+  .sensors {
+    display: grid;
+    gap: 9px;
+    margin: 12px 0 16px;
+  }
+  .sensor {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid #dce4eb;
+    border-radius: 9px;
+  }
+  .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    display: inline-block; margin-right: 8px;
+    background: #aab4bd;
+  }
+  .ok .dot { background: #25a05a; }
+  .alert .dot { background: #d83a3a; }
+  .value { font-weight: 700; }
+  button {
+    border: 0;
+    border-radius: 9px;
+    padding: 11px 13px;
+    margin: 4px 4px 4px 0;
+    cursor: pointer;
+    font-weight: 700;
+    background: #e5ebf0;
+    color: #17212b;
+  }
+  button:hover { filter: brightness(.97); }
+  button.primary { background: #1769aa; color: white; }
+  button.danger { background: #c93636; color: white; }
+  button.success { background: #258a54; color: white; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    font-size: 13px;
+    color: #5d6873;
+    margin-top: 12px;
+  }
+  .log {
+    height: 135px;
+    overflow: auto;
+    background: #101820;
+    color: #d8e5ee;
+    padding: 10px;
+    border-radius: 9px;
+    font: 12px/1.5 Consolas, monospace;
+  }
+  .steps {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+  .step {
+    padding: 9px;
+    text-align: center;
+    border-radius: 8px;
+    background: #edf2f6;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .step.active { background: #1769aa; color: white; }
+  .note {
+    margin-top: 12px;
+    font-size: 12px;
+    color: #687580;
+    line-height: 1.45;
+  }
+  @media (max-width: 850px) {
+    .grid { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RESCUENET</h1>
+  <p class="subtitle">Simple browser simulation — open-well fall detection and automatic rescue-net lifting</p>
+
+  <div class="grid">
+    <div class="card scene">
+      <canvas id="scene" width="760" height="650"></canvas>
+      <div class="steps">
+        <div class="step" id="s1">1. Normal</div>
+        <div class="step" id="s2">2. Fall</div>
+        <div class="step" id="s3">3. Detect</div>
+        <div class="step" id="s4">4. Lift</div>
+        <div class="step" id="s5">5. Alert</div>
+      </div>
+    </div>
+
+    <div class="card panel">
+      <div class="status" id="status">
+        SYSTEM READY
+        <span class="small">Waiting for a fall event</span>
+      </div>
+
+      <h3>Detection layer</h3>
+      <div class="sensors">
+        <div class="sensor" id="ultra"><span><span class="dot"></span>Ultrasonic (JSN-SR04T)</span><span class="value">CLEAR</span></div>
+        <div class="sensor" id="motion"><span><span class="dot"></span>Motion / MPU6050</span><span class="value">LOW</span></div>
+        <div class="sensor" id="load"><span><span class="dot"></span>Load cell + HX711</span><span class="value">0 kg</span></div>
+      </div>
+
+      <h3>Controls</h3>
+      <button class="danger" id="fallBtn">SIMULATE FALL</button>
+      <button class="primary" id="autoBtn">AUTO RESCUE</button>
+      <button class="success" id="liftBtn">LIFT NET</button>
+      <button id="stopBtn">EMERGENCY STOP</button>
+      <button id="resetBtn">RESET</button>
+
+      <h3>Communication</h3>
+      <button id="alertBtn">SEND ALERT</button>
+
+      <h3>Event log</h3>
+      <div class="log" id="log"></div>
+
+      <div class="note">
+        This is a concept demonstration, not a safety-certified rescue simulation.
+        The sensor values are simulated and are intended to show the control sequence:
+        detect → confirm → motor action → net lift → alert.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+
+const state = {
+  phase: "normal",
+  netY: 535,
+  targetY: 535,
+  personY: 125,
+  motorOn: false,
+  alert: false,
+  stopped: false,
+  auto: false,
+  sensorTimer: null
+};
+
+const statusEl = document.getElementById("status");
+const logEl = document.getElementById("log");
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logEl.innerHTML += `[${t}] ${msg}<br>`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setStatus(title, detail) {
+  statusEl.innerHTML = `${title}<span class="small">${detail}</span>`;
+}
+
+function setSensor(id, value, mode="") {
+  const el = document.getElementById(id);
+  el.className = "sensor " + mode;
+  el.querySelector(".value").textContent = value;
+}
+
+function setStep(n) {
+  for (let i=1; i<=5; i++) document.getElementById("s"+i).classList.toggle("active", i===n);
+}
+
+function simulateFall() {
+  if (state.stopped) return;
+  state.phase = "fall";
+  state.personY = 115;
+  setStep(2);
+  setStatus("FALL DETECTED", "Object/person is moving toward the rescue net");
+  setSensor("ultra", "OBJECT", "alert");
+  setSensor("motion", "HIGH", "alert");
+  setSensor("load", "0 kg", "");
+  log("Fall event simulated.");
+  animateFall();
+}
+
+function animateFall() {
+  let start = performance.now();
+  const duration = 1500;
+  function frame(now) {
+    if (state.stopped || state.phase !== "fall") return;
+    const p = Math.min((now-start)/duration, 1);
+    state.personY = 115 + p*330;
+    draw();
+    if (p < 1) requestAnimationFrame(frame);
+    else confirmDetection();
+  }
+  requestAnimationFrame(frame);
+}
+
+function confirmDetection() {
+  if (state.stopped) return;
+  state.phase = "detect";
+  setStep(3);
+  setStatus("CONFIRMING FALL", "Multiple sensors agree — rescue sequence ready");
+  setSensor("ultra", "OBJECT", "ok");
+  setSensor("motion", "HIGH", "ok");
+  setSensor("load", "72 kg", "ok");
+  log("Ultrasonic + motion + load thresholds confirmed.");
+  if (state.auto) {
+    setTimeout(() => liftNet(), 900);
+  }
+}
+
+function liftNet() {
+  if (state.stopped) return;
+  state.phase = "lift";
+  state.motorOn = true;
+  state.targetY = 205;
+  setStep(4);
+  setStatus("MOTOR ON — NET LIFTING", "Gear motor winds the two cables");
+  log("Motor activated. Both cable drums rotate.");
+  animateLift();
+}
+
+function animateLift() {
+  function frame() {
+    if (state.stopped || state.phase !== "lift") return;
+    state.netY += (state.targetY - state.netY) * 0.045;
+    if (Math.abs(state.netY - state.targetY) < 1) {
+      state.netY = state.targetY;
+      state.motorOn = false;
+      state.phase = "alert";
+      setStep(5);
+      setStatus("RESCUE NET RAISED", "Rescue position reached — sending notification");
+      log("Net reached rescue position.");
+      setTimeout(sendAlert, 400);
+      draw();
+      return;
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function sendAlert() {
+  if (state.stopped) return;
+  state.alert = true;
+  setStatus("ALERT SENT", "GSM / IoT notification simulated");
+  log("Emergency alert sent to configured contacts.");
+  draw();
+}
+
+function emergencyStop() {
+  state.stopped = true;
+  state.motorOn = false;
+  setStatus("EMERGENCY STOP", "Motor stopped by manual override");
+  log("Emergency stop activated.");
+  draw();
+}
+
+function reset() {
+  state.phase = "normal";
+  state.netY = 535;
+  state.targetY = 535;
+  state.personY = 115;
+  state.motorOn = false;
+  state.alert = false;
+  state.stopped = false;
+  state.auto = false;
+  setStep(1);
+  setStatus("SYSTEM READY", "Waiting for a fall event");
+  setSensor("ultra", "CLEAR", "");
+  setSensor("motion", "LOW", "");
+  setSensor("load", "0 kg", "");
+  log("System reset.");
+  draw();
+}
+
+document.getElementById("fallBtn").onclick = simulateFall;
+document.getElementById("liftBtn").onclick = liftNet;
+document.getElementById("alertBtn").onclick = sendAlert;
+document.getElementById("stopBtn").onclick = emergencyStop;
+document.getElementById("resetBtn").onclick = reset;
+document.getElementById("autoBtn").onclick = () => {
+  state.auto = true;
+  if (state.phase === "normal") simulateFall();
+  else if (state.phase === "detect") liftNet();
+};
+
+function drawWell() {
+  const cx = 380;
+  const left = 155, right = 605, top = 80, bottom = 590;
+  ctx.fillStyle = "#c5cbd0";
+  ctx.fillRect(left, top, 32, bottom-top);
+  ctx.fillRect(right-32, top, 32, bottom-top);
+
+  ctx.fillStyle = "#dce3e8";
+  ctx.fillRect(left+32, top, right-left-64, bottom-top);
+
+  ctx.strokeStyle = "#68747d";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(left, top, right-left, bottom-top);
+
+  // water
+  ctx.fillStyle = "#8fc5e8";
+  ctx.fillRect(left+32, 545, right-left-64, 45);
+  ctx.strokeStyle = "#5797bd";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(left+32, 545); ctx.lineTo(right-32, 545); ctx.stroke();
+
+  // top support ring
+  ctx.strokeStyle = "#555e65";
+  ctx.lineWidth = 13;
+  ctx.beginPath();
+  ctx.ellipse(cx, top+4, 240, 32, 0, 0, Math.PI*2);
+  ctx.stroke();
+
+  // motor
+  ctx.fillStyle = "#4a5258";
+  ctx.fillRect(cx-34, 35, 68, 48);
+  ctx.fillStyle = "#30363a";
+  ctx.fillRect(cx-25, 12, 50, 28);
+  ctx.fillStyle = "#777f84";
+  ctx.fillRect(cx-10, 83, 20, 35);
+
+  // horizontal shaft
+  ctx.strokeStyle = "#555";
+  ctx.lineWidth = 14;
+  ctx.beginPath();
+  ctx.moveTo(215, 120); ctx.lineTo(545, 120); ctx.stroke();
+
+  // drums
+  for (const x of [225,535]) {
+    ctx.fillStyle = "#6b7379";
+    ctx.beginPath();
+    ctx.ellipse(x, 120, 27, 34, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = "#42484d";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  // cables
+  ctx.strokeStyle = "#353b40";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(225, 150); ctx.lineTo(225, state.netY); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(535, 150); ctx.lineTo(535, state.netY); ctx.stroke();
+
+  // net frame
+  ctx.strokeStyle = "#765f39";
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.ellipse(cx, state.netY, 175, 35, 0, 0, Math.PI*2);
+  ctx.stroke();
+
+  // net mesh
+  ctx.strokeStyle = "rgba(40,50,55,.55)";
+  ctx.lineWidth = 1;
+  for (let x=-160; x<=160; x+=20) {
+    ctx.beginPath();
+    ctx.moveTo(cx+x, state.netY-30);
+    ctx.lineTo(cx+x*0.65, state.netY+30);
+    ctx.stroke();
+  }
+  for (let y=-25; y<=25; y+=12) {
+    ctx.beginPath();
+    ctx.ellipse(cx, state.netY+y, 160*(1-Math.abs(y)/80), 9, 0, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  // person/object
+  if (state.phase !== "normal") {
+    ctx.fillStyle = "#2f3b45";
+    ctx.beginPath();
+    ctx.arc(cx, state.personY-18, 14, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillRect(cx-12, state.personY-4, 24, 45);
+    ctx.strokeStyle = "#2f3b45";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx, state.personY+40); ctx.lineTo(cx-18, state.personY+70);
+    ctx.moveTo(cx, state.personY+40); ctx.lineTo(cx+18, state.personY+70);
+    ctx.stroke();
+  }
+
+  // labels
+  ctx.fillStyle = "#1f2b33";
+  ctx.font = "bold 15px Arial";
+  ctx.fillText("DC GEAR MOTOR", 24, 48);
+  ctx.fillText("HORIZONTAL SHAFT", 24, 112);
+  ctx.fillText("CABLE DRUMS", 24, 143);
+  ctx.fillText("RESCUE NET", 24, state.netY+5);
+  ctx.fillText("WATER", 620, 570);
+
+  if (state.motorOn) {
+    ctx.fillStyle = "#1b8a54";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText("MOTOR ON ↻", 315, 178);
+  }
+  if (state.alert) {
+    ctx.fillStyle = "#c93636";
+    ctx.font = "bold 18px Arial";
+    ctx.fillText("⚠ ALERT SENT", 305, 620);
+  }
+}
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawWell();
+}
+
+reset();
+</script>
+</body>
+</html>
